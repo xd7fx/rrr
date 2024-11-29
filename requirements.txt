@@ -5,3 +5,5 @@ facenet-pytorch
 pandas
 streamlit
 tqdm
+streamlit
+opencv-python-headless
