@@ -22,7 +22,8 @@ emotions = {
 st.title("Real-Time Emotion Classification")
 st.write("تصنيف المشاعر باستخدام كاميرا الويب وعرض الشريط التقدمي (Progress Bar) بناءً على المشاعر.")
 
-# إعداد كاميرا الويب
+# تحديد الكاميرا
+camera_index = st.number_input("Camera Index (Default is 0)", min_value=0, step=1, value=0)
 run = st.checkbox("Run Webcam")
 progress = st.empty()
 emotion_display = st.empty()
@@ -35,42 +36,45 @@ def fake_emotion_classifier():
 # معالجة الفيديو في الوقت الفعلي
 if run:
     detector = MTCNN(keep_all=False, device='cuda' if torch.cuda.is_available() else 'cpu')
-    cap = cv2.VideoCapture(1)  # فتح كاميرا الويب
-    progress_value = 0  # القيمة الأولية لشريط التقدم
+    cap = cv2.VideoCapture(camera_index)  # تحديد الكاميرا
 
-    while run:
-        ret, frame = cap.read()
-        if not ret:
-            st.write("Failed to capture video.")
-            break
+    if not cap.isOpened():
+        st.error(f"Failed to open the webcam at index {camera_index}. Please check your camera.")
+    else:
+        progress_value = 0  # القيمة الأولية لشريط التقدم
 
-        # معالجة الإطار
-        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        pil_image = Image.fromarray(frame_rgb)
+        while run:
+            ret, frame = cap.read()
+            if not ret:
+                st.error("Failed to capture video.")
+                break
 
-        # اكتشاف الوجه
-        face = detector(pil_image)
+            # معالجة الإطار
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            pil_image = Image.fromarray(frame_rgb)
 
-        # تصنيف الوجه (محاكاة نموذج هنا)
-        emotion = fake_emotion_classifier()
-        emotion_display.markdown(f"### Detected Emotion: **{emotion}**")
+            # اكتشاف الوجه
+            face = detector(pil_image)
 
-        # تحديث الشريط التقدمي إذا كان التصنيف "happy"
-        if emotion == "happy":
-            progress_value = min(100, progress_value + 5)
-        else:
-            progress_value = max(0, progress_value - 2)
+            # تصنيف الوجه (محاكاة نموذج هنا)
+            emotion = fake_emotion_classifier()
+            emotion_display.markdown(f"### Detected Emotion: **{emotion}**")
 
-        progress.progress(progress_value / 100)
+            # تحديث الشريط التقدمي إذا كان التصنيف "happy"
+            if emotion == "happy":
+                progress_value = min(100, progress_value + 5)
+            else:
+                progress_value = max(0, progress_value - 2)
 
-        # عرض الإطار
-        st.image(frame_rgb, caption="Webcam Feed", use_column_width=True)
+            progress.progress(progress_value / 100)
 
-        # تأخير لتقليل الحمل على المعالج
-        time.sleep(0.1)
+            # عرض الإطار
+            st.image(frame_rgb, caption="Webcam Feed", use_column_width=True)
 
-    cap.release()
+            # تأخير لتقليل الحمل على المعالج
+            time.sleep(0.1)
+
+        cap.release()
 
 else:
     st.write("Click the checkbox to start the webcam.")
-
