@@ -16,6 +16,9 @@ class VideoProcessor:
         self.expression_model = load_model("facial_emotion_model.h5")
         self.expression_labels = ["Angry", "Disgust", "Fear", "Happy", "Neutral", "Sad", "Surprise"]
 
+        # القيم الافتراضية للتوقعات
+        self.predictions = {label: 0 for label in self.expression_labels}
+
     def recv(self, frame):
         try:
             # قراءة الإطار وتحويله إلى BGR
@@ -26,9 +29,7 @@ class VideoProcessor:
             faces = self.face_classifier.detectMultiScale(gray)
 
             # جمع التوقعات للتعبيرات
-            emotion_predictions = {label: 0 for label in self.expression_labels}
-
-            # معالجة كل وجه تم اكتشافه
+            self.predictions = {label: 0 for label in self.expression_labels}  # إعادة التهيئة
             for (x, y, w, h) in faces:
                 if w > 100:  # تجاهل الوجوه الصغيرة
                     roi_gray = gray[y:y + h, x:x + w]
@@ -42,22 +43,23 @@ class VideoProcessor:
                         # تنبؤ التعبير باستخدام الموديل
                         expression_prediction = self.expression_model.predict(roi)[0]
 
-                        # إضافة النتائج إلى القاموس
+                        # تخزين النتائج في القاموس
                         for idx, label in enumerate(self.expression_labels):
-                            emotion_predictions[label] += expression_prediction[idx]
+                            self.predictions[label] += expression_prediction[idx]
 
-            # عرض الإطارات
+            # تحويل الصورة إلى RGB للعرض
             img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-            return av.VideoFrame.from_ndarray(img, format="rgb24"), emotion_predictions
+            return av.VideoFrame.from_ndarray(img, format="rgb24")
 
         except Exception as e:
             print(f"Error processing frame: {e}")
-            return frame, {}
+            return frame
 
 # شريط التقدم لعرض النتائج
 def display_progress_bars(predictions):
     st.subheader("Emotion Scores")
     for emotion, score in predictions.items():
+        st.write(f"**{emotion}**: {int(score * 100)}%")
         st.progress(int(score * 100))  # تحويل القيمة إلى نسبة مئوية
 
 # تشغيل بث الكاميرا مع المعالجة
@@ -78,12 +80,11 @@ def main():
         },
     )
 
+    # عرض أشرطة التقدم خارج الفيديو
     if ctx.video_processor:
         while True:
-            # احصل على التوقعات من المعالج
-            frame, predictions = ctx.video_processor.recv(ctx.input_frame)
-            if predictions:
-                display_progress_bars(predictions)
+            predictions = ctx.video_processor.predictions  # استرجاع التوقعات من المعالج
+            display_progress_bars(predictions)
 
 if __name__ == "__main__":
     main()
