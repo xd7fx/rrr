@@ -13,7 +13,7 @@ class VideoProcessor:
     def __init__(self):
         # تحميل الموديل المستخدم لتصنيف التعبيرات
         self.face_classifier = cv2.CascadeClassifier("haarcascade_frontalface_default.xml")
-        self.expression_model = load_model("models/facial_emotion_model.h5")
+        self.expression_model = load_model("facial_emotion_model.h5")
         self.expression_labels = ["Angry", "Disgust", "Fear", "Happy", "Neutral", "Sad", "Surprise"]
 
     def recv(self, frame):
