@@ -1,47 +1,89 @@
 import streamlit as st
+from streamlit_webrtc import webrtc_streamer
+import numpy as np
+import tensorflow as tf
 import cv2
+import av
+from tensorflow.keras.models import load_model
+from tensorflow.keras.preprocessing.image import img_to_array
 
-# دالة لاكتشاف الكاميرات المتاحة
-def list_available_cameras(max_cameras=10):
-    cameras = []
-    for i in range(max_cameras):
-        cap = cv2.VideoCapture(i)
-        if cap.isOpened():
-            cameras.append(f"Camera {i}")
-            cap.release()
-    return cameras
+st.header("Facial Expression Recognition with Progress Bars")
 
-# واجهة Streamlit
-st.title("Select and Use Available Cameras")
-st.write("هذا التطبيق يعرض جميع الكاميرات المتاحة ويتيح لك اختيار واحدة.")
+class VideoProcessor:
+    def __init__(self):
+        # تحميل الموديل المستخدم لتصنيف التعبيرات
+        self.face_classifier = cv2.CascadeClassifier("haarcascade_frontalface_default.xml")
+        self.expression_model = load_model("models/facial_emotion_model.h5")
+        self.expression_labels = ["Angry", "Disgust", "Fear", "Happy", "Neutral", "Sad", "Surprise"]
 
-# فحص الكاميرات المتاحة
-cameras = list_available_cameras()
+    def recv(self, frame):
+        try:
+            # قراءة الإطار وتحويله إلى BGR
+            img = frame.to_ndarray(format="bgr24")
 
-# عرض الكاميرات
-if not cameras:
-    st.error("No cameras detected. Please connect a camera and try again.")
-else:
-    selected_camera = st.selectbox("Select Camera", options=cameras)
-    camera_index = int(selected_camera.split(" ")[-1])  # استخراج رقم الكاميرا
+            # تحويل الإطار إلى تدرجات الرمادي لاكتشاف الوجه
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            faces = self.face_classifier.detectMultiScale(gray)
 
-    # تشغيل الكاميرا
-    run = st.checkbox("Run Webcam")
+            # جمع التوقعات للتعبيرات
+            emotion_predictions = {label: 0 for label in self.expression_labels}
 
-    if run:
-        st.write(f"Starting webcam: {selected_camera}")
-        cap = cv2.VideoCapture(camera_index)
-        frame_window = st.image([])
+            # معالجة كل وجه تم اكتشافه
+            for (x, y, w, h) in faces:
+                if w > 100:  # تجاهل الوجوه الصغيرة
+                    roi_gray = gray[y:y + h, x:x + w]
+                    roi_gray = cv2.resize(roi_gray, (48, 48), interpolation=cv2.INTER_AREA)
 
-        while run:
-            ret, frame = cap.read()
-            if not ret:
-                st.error("Failed to capture video.")
-                break
+                    if np.sum([roi_gray]) != 0:
+                        roi = roi_gray.astype("float") / 255.0
+                        roi = img_to_array(roi)
+                        roi = np.expand_dims(roi, axis=0)
 
-            # عرض الإطار
-            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            frame_window.image(frame_rgb, channels="RGB")
+                        # تنبؤ التعبير باستخدام الموديل
+                        expression_prediction = self.expression_model.predict(roi)[0]
 
-        cap.release()
-        st.write(f"Stopped webcam: {selected_camera}")
+                        # إضافة النتائج إلى القاموس
+                        for idx, label in enumerate(self.expression_labels):
+                            emotion_predictions[label] += expression_prediction[idx]
+
+            # عرض الإطارات
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            return av.VideoFrame.from_ndarray(img, format="rgb24"), emotion_predictions
+
+        except Exception as e:
+            print(f"Error processing frame: {e}")
+            return frame, {}
+
+# شريط التقدم لعرض النتائج
+def display_progress_bars(predictions):
+    st.subheader("Emotion Scores")
+    for emotion, score in predictions.items():
+        st.progress(int(score * 100))  # تحويل القيمة إلى نسبة مئوية
+
+# تشغيل بث الكاميرا مع المعالجة
+def main():
+    ctx = webrtc_streamer(
+        key="expression-detection",
+        video_processor_factory=VideoProcessor,
+        rtc_configuration={
+            "iceServers": [
+                {"urls": ["stun:stun.l.google.com:19302"]},
+                {"urls": ["stun:stun1.l.google.com:19302"]},
+                {"urls": ["stun:stun2.l.google.com:19302"]},
+                {"urls": ["stun:stun3.l.google.com:19302"]},
+                {"urls": ["stun:stun4.l.google.com:19302"]},
+                {"urls": ["stun:stun.stunprotocol.org:3478"]},
+                {"urls": ["stun:stun.services.mozilla.com"]}
+            ]
+        },
+    )
+
+    if ctx.video_processor:
+        while True:
+            # احصل على التوقعات من المعالج
+            frame, predictions = ctx.video_processor.recv(ctx.input_frame)
+            if predictions:
+                display_progress_bars(predictions)
+
+if __name__ == "__main__":
+    main()
