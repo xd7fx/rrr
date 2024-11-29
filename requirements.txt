@@ -7,3 +7,7 @@ streamlit
 tqdm
 streamlit
 opencv-python-headless
+streamlit-webrtc
+tensorflow
+av
+numpy
