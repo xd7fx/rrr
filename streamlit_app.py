@@ -23,9 +23,9 @@ st.markdown("(Reload to apply changes)")
 class VideoProcessor:
     def __init__(self):
         self.face_classifier = cv2.CascadeClassifier("haarcascade_frontalface_default.xml")
-        self.expression_model = load_model("models/facial_emotion_model.h5")
-        self.gender_model = load_model("models/gender_model.h5")
-        self.ethnicity_model = load_model("models/ethnicity_model.h5")
+        self.expression_model = load_model("facial_emotion_model.h5")
+        self.gender_model = load_model("gender_model.h5")
+        self.ethnicity_model = load_model("ethnicity_model.h5")
 
         self.expression_labels = ["Angry","Disgust","Fear","Happy","Neutral","Sad","Surprise"]
         self.gender_labels = ["Male", "Female"]
