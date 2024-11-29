@@ -18,11 +18,17 @@ class VideoProcessor:
 
         # القيم الافتراضية للتوقعات
         self.predictions = {label: 0 for label in self.expression_labels}
+        self.frame_count = 0  # عداد للإطارات
 
     def recv(self, frame):
         try:
             # قراءة الإطار وتحويله إلى BGR
             img = frame.to_ndarray(format="bgr24")
+
+            # تحديث كل 10 إطارات فقط لتقليل الحمل
+            self.frame_count += 1
+            if self.frame_count % 10 != 0:
+                return av.VideoFrame.from_ndarray(img, format="bgr24")
 
             # تحويل الإطار إلى تدرجات الرمادي لاكتشاف الوجه
             gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
