@@ -35,7 +35,7 @@ def fake_emotion_classifier():
 # معالجة الفيديو في الوقت الفعلي
 if run:
     detector = MTCNN(keep_all=False, device='cuda' if torch.cuda.is_available() else 'cpu')
-    cap = cv2.VideoCapture(0)  # فتح كاميرا الويب
+    cap = cv2.VideoCapture(1)  # فتح كاميرا الويب
     progress_value = 0  # القيمة الأولية لشريط التقدم
 
     while run:
