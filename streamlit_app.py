@@ -2,15 +2,19 @@ import streamlit as st
 from pathlib import Path
 from models.models import EmotionRecognizerScriptable
 import tempfile
+from models.download_model import download_model
 
 # مسار النموذج
 MODEL_PATH = "models/model.pt"
 
 # تحقق من وجود النموذج
 if not Path(MODEL_PATH).exists():
-    st.error("النموذج غير موجود. يرجى تحميل النموذج أولاً!")
+    st.warning("النموذج غير موجود، يتم تحميله الآن...")
+    download_model()
+if not Path(MODEL_PATH).exists():
+    st.error("النموذج غير موجود. يرجى تحميل النموذج يدويًا!")
 else:
-    # تحميل النموذج
+    st.success("النموذج تم تحميله بنجاح!")
     emotion_recognizer = EmotionRecognizerScriptable(MODEL_PATH)
     st.success("النموذج تم تحميله بنجاح!")
 
