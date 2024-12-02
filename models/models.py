@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 import cv2
 from typing import Dict, Union
+from models.models import EmotionRecognizerScriptable
 
 
 class EmotionRecognizerScriptable(torch.nn.Module):
