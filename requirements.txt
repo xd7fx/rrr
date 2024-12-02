@@ -5,4 +5,3 @@ facenet-pytorch
 numpy
 streamlit
 gdown
-opencv-python==4.5.3.56
