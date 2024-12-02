@@ -2,7 +2,6 @@ import streamlit as st
 from transformers import pipeline
 import cv2
 import tempfile
-import os
 from moviepy.video.io.VideoFileClip import VideoFileClip
 
 # تحميل النماذج
