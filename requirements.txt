@@ -7,3 +7,4 @@ opencv-python
 numpy
 ffmpeg-python
 gdown
+torch
