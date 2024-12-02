@@ -5,3 +5,4 @@ facenet-pytorch
 numpy
 streamlit
 gdown
+opencv-python-headless
