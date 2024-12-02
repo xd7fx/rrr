@@ -6,3 +6,4 @@ facenet-pytorch
 opencv-python
 numpy
 ffmpeg-python
+gdown
