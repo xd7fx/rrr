@@ -1,5 +1,5 @@
 opencv-python
-torch
+torch==2.2.0
 torchvision
 facenet-pytorch
 numpy
