@@ -1,8 +1,5 @@
-opencv-python
-torch
-torchvision
-facenet-pytorch
-numpy
-streamlit
-gdown
-opencv-python-headless
+streamlit==1.25.0
+transformers==4.33.2
+torch==2.0.1
+opencv-python==4.8.0.74
+moviepy==1.0.3
