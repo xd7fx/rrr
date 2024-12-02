@@ -1,52 +1,65 @@
 import streamlit as st
-from pathlib import Path
-from models.models import EmotionRecognizerScriptable
+from transformers import pipeline
+import cv2
 import tempfile
-from models.download_model import download_model
+import os
+from moviepy.video.io.VideoFileClip import VideoFileClip
 
-# مسار النموذج
-MODEL_PATH = "models/model.pt"
+# تحميل النماذج
+audio_emotion_recognizer = pipeline("audio-classification", model="superb/hubert-large-superb-er")
+video_emotion_recognizer = pipeline("image-classification", model="nateraw/vit-base-beans")  # نموذج تمثيلي للفيديو
 
-# تحقق من وجود النموذج
-if not Path(MODEL_PATH).exists():
-    st.warning("النموذج غير موجود، يتم تحميله الآن...")
-    download_model()
-if not Path(MODEL_PATH).exists():
-    st.error("النموذج غير موجود. يرجى تحميل النموذج يدويًا!")
-else:
-    st.success("النموذج تم تحميله بنجاح!")
-    emotion_recognizer = EmotionRecognizerScriptable(MODEL_PATH)
-    st.success("النموذج تم تحميله بنجاح!")
+st.title("تحليل المشاعر من الصوت والفيديو")
 
-# عنوان التطبيق
-st.title("🎥 نظام تحليل المشاعر من الفيديو")
+# تحميل ملف الفيديو
+video_file = st.file_uploader("اختر ملف فيديو لتحليل المشاعر", type=["mp4", "avi", "mov"])
 
-# رفع الفيديو
-uploaded_video = st.file_uploader("ارفع فيديو لتحليله", type=["mp4", "avi", "mov"])
+if video_file is not None:
+    # عرض الفيديو
+    st.video(video_file)
 
-if uploaded_video:
-    # عرض الفيديو المرفوع
-    st.video(uploaded_video)
+    # استخراج الصوت من الفيديو
+    st.write("جارٍ تحليل الصوت...")
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_video:
+        temp_video.write(video_file.read())
+        video_path = temp_video.name
 
-    # حفظ الفيديو مؤقتًا لتحليله
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_video_file:
-        temp_video_file.write(uploaded_video.read())
-        video_path = temp_video_file.name
+        # استخراج الصوت باستخدام moviepy
+        video_clip = VideoFileClip(video_path)
+        audio_path = video_path.replace(".mp4", ".wav")
+        video_clip.audio.write_audiofile(audio_path)
 
-    st.info("جاري تحليل الفيديو... الرجاء الانتظار")
+    # تحليل الصوت
+    audio_results = audio_emotion_recognizer(audio_path)
+    st.write("نتائج تحليل المشاعر من الصوت:", audio_results)
 
-    # تحليل الفيديو
-    try:
-        result = emotion_recognizer.predict_emotion(video_path)
-        st.success("تم تحليل الفيديو بنجاح!")
-        
-        # عرض النتائج
-        st.write(f"العاطفة الرئيسية: **{result['top_emotion']}**")
-        st.write("### احتمالات العواطف:")
-        for emotion, probability in result["probabilities"].items():
-            st.write(f"- **{emotion}**: {probability:.2%}")
-    except Exception as e:
-        st.error(f"حدث خطأ أثناء تحليل الفيديو: {e}")
+    # تحليل الفيديو (استخراج الإطارات وتحليلها)
+    st.write("جارٍ تحليل الفيديو...")
+    cap = cv2.VideoCapture(video_path)
+    frame_count = 0
+    video_results = []
 
-    # حذف الفيديو المؤقت
-    Path(video_path).unlink()
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret or frame_count > 30:  # تحليل أول 30 إطار فقط
+            break
+        frame_count += 1
+
+        # حفظ الإطار مؤقتًا
+        temp_frame_path = f"frame_{frame_count}.jpg"
+        cv2.imwrite(temp_frame_path, frame)
+
+        # تحليل المشاعر من الإطار
+        frame_results = video_emotion_recognizer(temp_frame_path)
+        video_results.append(frame_results)
+
+        # حذف الإطار المؤقت
+        os.remove(temp_frame_path)
+
+    cap.release()
+
+    st.write("نتائج تحليل المشاعر من الفيديو:", video_results)
+
+    # حذف الملفات المؤقتة
+    os.remove(video_path)
+    os.remove(audio_path)
