@@ -1,10 +1,7 @@
-streamlit
+opencv-python
 torch
 torchvision
-transformers
 facenet-pytorch
-opencv-python
 numpy
-ffmpeg-python
+streamlit
 gdown
-torch
