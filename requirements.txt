@@ -1,5 +1,7 @@
-streamlit
-transformers
 torch
-opencv-python
-moviepy
+torchvision
+opencv-python-headless
+facenet-pytorch
+numpy
+streamlit
+gdown
