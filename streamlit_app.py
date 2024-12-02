@@ -1,56 +1,48 @@
 import streamlit as st
-import torch
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from models.download_model import download_model
-from emotion_recognizer import EmotionRecognizerScriptable  # الكود الخاص بك
+from models import EmotionRecognizerScriptable
+import tempfile
 
-# تحميل النموذج إذا لم يكن موجودًا
-download_model()
+# مسار النموذج
+MODEL_PATH = "models/model.pt"
 
-# التحقق من وجود ملف النموذج
-model_path = Path("models/model.pt")
-if not model_path.exists():
-    st.error("النموذج غير موجود. تأكد من تنزيله بشكل صحيح.")
+# التحقق من وجود النموذج
+if not Path(MODEL_PATH).exists():
+    st.error("النموذج غير موجود. يرجى تحميل النموذج أولاً!")
 else:
-    st.success("النموذج جاهز!")
+    # تحميل النموذج
+    emotion_recognizer = EmotionRecognizerScriptable(MODEL_PATH)
+    st.success("النموذج تم تحميله بنجاح!")
 
-# تحميل النموذج
-emotion_recognizer = EmotionRecognizerScriptable(model_path)
-
-# تعريف واجهة المستخدم
+# عنوان التطبيق
 st.title("🎥 نظام تحليل المشاعر من الفيديو")
+
+# رفع الفيديو
 uploaded_video = st.file_uploader("ارفع فيديو لتحليله", type=["mp4", "avi", "mov"])
-
-# لإنشاء قائمة انتظار للمستقبلات
-executor = ThreadPoolExecutor(max_workers=2)
-
-def process_video(video_path):
-    """تحليل المشاعر من الفيديو"""
-    return emotion_recognizer.predict_emotion(video_path)
 
 if uploaded_video:
     # عرض الفيديو المرفوع
     st.video(uploaded_video)
 
     # حفظ الفيديو مؤقتًا لتحليله
-    with open("temp_video.mp4", "wb") as f:
-        f.write(uploaded_video.getbuffer())
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_video_file:
+        temp_video_file.write(uploaded_video.read())
+        video_path = temp_video_file.name
 
-    # تحليل الفيديو في الخلفية
     st.info("جاري تحليل الفيديو... الرجاء الانتظار")
-    future = executor.submit(process_video, "temp_video.mp4")
 
-    # انتظار النتيجة
-    if future.done():
-        result = future.result()
-        st.success("تم تحليل الفيديو!")
-        st.write(f"العاطفة الرئيسية: {result['top_emotion']}")
-        st.write("تفاصيل احتمالات المشاعر:")
+    # تحليل الفيديو
+    try:
+        result = emotion_recognizer.predict_emotion(video_path)
+        st.success("تم تحليل الفيديو بنجاح!")
+        
+        # عرض النتائج
+        st.write(f"العاطفة الرئيسية: **{result['top_emotion']}**")
+        st.write("### احتمالات العواطف:")
         for emotion, probability in result["probabilities"].items():
-            st.write(f"- {emotion}: {probability:.2%}")
+            st.write(f"- **{emotion}**: {probability:.2%}")
+    except Exception as e:
+        st.error(f"حدث خطأ أثناء تحليل الفيديو: {e}")
 
-        # حذف الفيديو المؤقت
-        Path("temp_video.mp4").unlink()
-    else:
-        st.info("التحليل جارٍ... الرجاء الانتظار.")
+    # حذف الفيديو المؤقت
+    Path(video_path).unlink()
