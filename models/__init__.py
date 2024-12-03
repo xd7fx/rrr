@@ -1,2 +1,2 @@
 
-from models.models import AuViLSTMModel, EmotionRecognizerScriptable
+from models.models import AuViLSTMModel, EmotionRecognizer
