@@ -1,94 +1,96 @@
 import torch
-from transformers import AutoModelForImageClassification
-from funasr import AutoModel
+import torchvision.transforms.v2 as VT
+from facenet_pytorch import MTCNN
+from pathlib import Path
+import numpy as np
+import cv2
+from typing import Dict, Union
 
-# AuViLSTMModel Class
-class AuViLSTMModel(torch.nn.Module):
-    def __init__(
-        self,
-        num_classes: int = 5,
-        mode: str = "visual",  # Can be "audio", "visual", or "both"
-        hidden_sizes: dict = {"audio": 384, "visual": 384},
-        rnn_num_layers: int = 2,
-        backbone_feat_size: int = 768
-    ):
+
+class EmotionRecognizerScriptable(torch.nn.Module):
+    def __init__(self, model_path):
         super().__init__()
-        self.mode = mode
+        # تحميل النموذج
+        self.model = torch.jit.load(model_path)
+        
+        # إعداد معلمات معالجة الصور
+        face_size = 224
+        scale_factor = 1.3
 
-        # Visual backbone
-        if mode in ["visual", "both"]:
-            self.v_backbone = AutoModelForImageClassification.from_pretrained(
-                "dima806/facial_emotions_image_detection"
-            )
-            self.v_backbone.classifier = torch.nn.Identity()
-            self.v_rnn = torch.nn.GRU(
-                input_size=backbone_feat_size,
-                hidden_size=hidden_sizes['visual'],
-                num_layers=rnn_num_layers,
-                batch_first=True
-            )
-            for param in self.v_backbone.parameters():
-                param.requires_grad = False
-
-        # Audio backbone
-        if mode in ["audio", "both"]:
-            self.a_backbone = AutoModel(model="iic/emotion2vec_plus_base").model
-            self.a_rnn = torch.nn.GRU(
-                input_size=hidden_sizes["audio"],
-                hidden_size=hidden_sizes["audio"],
-                num_layers=rnn_num_layers,
-                batch_first=True
-            )
-            for param in self.a_backbone.parameters():
-                param.requires_grad = False
-
-        # Classifier input size
-        input_size = hidden_sizes["visual"] if mode == "visual" else \
-            hidden_sizes["audio"] if mode == "audio" else \
-            hidden_sizes["visual"] + hidden_sizes["audio"]
-
-        # Final classifier
-        self.classifier = torch.nn.Linear(input_size, num_classes)
-
-    def forward(self, batch):
-        features = []
-
-        # Process visual features
-        if self.mode in ["visual", "both"]:
-            frames = batch['frames']  # Shape: [batch_size, seq_len, C, H, W]
-            batch_size, seq_len = frames.shape[0], frames.shape[1]
-            frames = frames.view(-1, *frames.shape[-3:])  # Flatten sequence
-            with torch.no_grad():
-                visual_feats = self.v_backbone(frames).logits
-            visual_feats = visual_feats.view(batch_size, seq_len, -1)
-            _, h_n = self.v_rnn(visual_feats)
-            features.append(h_n[-1])  # Use the last hidden state
-
-        # Process audio features
-        if self.mode in ["audio", "both"]:
-            audio = batch['audio'].squeeze(1)
-            with torch.no_grad():
-                audio_feats = self.a_backbone.extract_features(audio)['x']
-            _, h_n = self.a_rnn(audio_feats)
-            features.append(h_n[-1])
-
-        # Combine features
-        combined_features = torch.cat(features, dim=-1) if len(features) > 1 else features[0]
-        return self.classifier(combined_features)
-
-# EmotionRecognizer Class
-class EmotionRecognizer(torch.nn.Module):
-    def __init__(self, num_classes: int = 5, hidden_size: int = 384):
-        super().__init__()
-        self.hidden_size = hidden_size
-        self.rnn = torch.nn.GRU(
-            input_size=hidden_size,
-            hidden_size=hidden_size,
-            num_layers=2,
-            batch_first=True
+        # تحويلات الصور
+        self.image_transforms = VT.Compose([
+            VT.ToImage(),
+            VT.Resize((224, 224)),
+            VT.Grayscale(num_output_channels=3),
+            VT.ToDtype(torch.float32, scale=True),
+            VT.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+        ])
+        
+        # MTCNN لاكتشاف الوجوه
+        self.mtcnn = MTCNN(
+            image_size=face_size,
+            margin=int(face_size * (scale_factor - 1) / 2),
+            device='cuda' if torch.cuda.is_available() else 'cpu',
+            select_largest=True,
+            post_process=False,
+            keep_all=False
         )
-        self.classifier = torch.nn.Linear(hidden_size, num_classes)
 
-    def forward(self, x):
-        _, h_n = self.rnn(x)
-        return self.classifier(h_n[-1])
+        # تسميات العواطف
+        self.emotion_labels = [
+            "neutral", "calm", "happy", "sad", 
+            "angry", "fearful", "disgust", "surprised"
+        ]
+
+    def preprocess_video(self, video_path: Union[str, Path]) -> torch.Tensor:
+        """معالجة الفيديو وتحويله إلى إطارات"""
+        cap = cv2.VideoCapture(str(video_path))
+        frames = []
+        
+        # الحصول على معدل الإطارات
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        frame_interval = int(fps / 5)  # استخراج 5 إطارات في الثانية
+
+        frame_count = 0
+        while cap.isOpened():
+            ret, frame = cap.read()
+            if not ret:
+                break
+            
+            # الاحتفاظ بإطارات معينة فقط
+            if frame_count % frame_interval == 0:
+                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                frames.append(frame)
+            
+            frame_count += 1
+
+        cap.release()
+
+        # اكتشاف الوجوه باستخدام MTCNN
+        frames = self.mtcnn(frames)
+        frames = self.image_transforms(frames)
+
+        # دمج الإطارات في Tensor
+        return torch.stack(frames).unsqueeze(0)
+
+    def predict_emotion(self, video_path: Union[str, Path]) -> Dict:
+        """تحليل الفيديو لاستخراج العواطف"""
+        # معالجة الفيديو
+        video_frames = self.preprocess_video(video_path)
+        
+        # تحضير الإدخال للنموذج
+        input_dict = {'frames': video_frames}
+
+        # الحصول على نتائج التحليل
+        logits = self.model.forward(input_dict)
+        probabilities = torch.softmax(logits, dim=-1)
+        top_k = torch.topk(probabilities, k=3)
+
+        # صياغة النتائج
+        return {
+            'top_emotion': self.emotion_labels[top_k.indices[0][0].item()],
+            'probabilities': {
+                self.emotion_labels[idx]: prob.item() 
+                for idx, prob in zip(top_k.indices[0], top_k.values[0])
+            }
+        }
