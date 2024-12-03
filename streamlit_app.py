@@ -1,30 +1,25 @@
 import streamlit as st
-import pickle
-from models import AuViLSTMModel
-from download_model import download_model
-from pathlib import Path
-from models.models import EmotionRecognizer
+from models import EmotionRecognizerScriptable
 
 MODEL_PATH = "models/auvi_lstm_model.pkl"
 
-# Download the model if not already present
-if not Path(MODEL_PATH).exists():
-    st.warning("Model not found! Downloading...")
-    download_model()
+st.title("Emotion Recognition App")
 
-if not Path(MODEL_PATH).exists():
-    st.error("The model could not be loaded. Please try again.")
-else:
-    with open(MODEL_PATH, "rb") as f:
-        model = pickle.load(f)
+try:
+    emotion_recognizer = EmotionRecognizerScriptable(MODEL_PATH)
     st.success("Model loaded successfully!")
+except Exception as e:
+    st.error(f"Error loading model: {e}")
 
-st.title("🎥 Video Emotion Analysis System")
-
-uploaded_file = st.file_uploader("Upload a video file for analysis", type=["mp4", "avi", "mov", "mpeg4"])
+uploaded_file = st.file_uploader("Upload a video file", type=["mp4", "avi", "mov"])
 
 if uploaded_file is not None:
     st.video(uploaded_file)
-    st.write("Processing video... Please wait.")
-    # You can include your video processing logic here
-    st.warning("Video processing functionality is under development.")
+    st.write("Processing video...")
+
+    try:
+        result = emotion_recognizer.predict_emotion(uploaded_file)
+        st.write("Top Emotion:", result["top_emotion"])
+        st.write("Probabilities:", result["probabilities"])
+    except Exception as e:
+        st.error(f"Error processing video: {e}")
