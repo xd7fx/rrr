@@ -7,7 +7,7 @@ MODEL_PATH = "models/auvi_lstm_model.pkl"
 
 st.title("Emotion Recognition App")
 
-try:
+try
     print("Loading EmotionRecognizer...")
     emotion_recognizer = EmotionRecognizer()
     print("EmotionRecognizer loaded successfully!")
