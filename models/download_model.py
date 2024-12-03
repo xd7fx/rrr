@@ -3,7 +3,7 @@ from pathlib import Path
 
 def download_model():
     # رابط التحميل المباشر للنموذج
-    url = "https://drive.google.com/file/d/1p4_iU9UF61Jtb0xnAn-alsTyLrQvAMSB/view?usp=sharing"
+    url = "https://drive.google.com/file/d/1p4_iJ9UF61Jtb0xnAn-alsTyLrQvAMSB/view?usp=sharing"
     output = Path("models/auvi_lstm_model.pkl")
 
     if not output.exists():
