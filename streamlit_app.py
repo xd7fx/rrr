@@ -3,6 +3,7 @@ import pickle
 from models import AuViLSTMModel
 from download_model import download_model
 from pathlib import Path
+from models.models import EmotionRecognizer
 
 MODEL_PATH = "models/auvi_lstm_model.pkl"
 
