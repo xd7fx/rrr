@@ -1,5 +1,5 @@
 import streamlit as st
-from models import EmotionRecognizerScriptable
+from models import AuViLSTMModel, EmotionRecognizer
 
 MODEL_PATH = "models/auvi_lstm_model.pkl"
 
