@@ -4,7 +4,7 @@ from pathlib import Path
 def download_model():
     # رابط التحميل المباشر
     url = "https://drive.google.com/file/d/1p4_iU9UF61Jtb0xnAn-alsTyLrQvAMSB/view?usp=sharing"
-    output = Path("models/model.pt")
+    output = Path("models/auvi_lstm_model.pkl")
     
     if not output.exists():
         print("Downloading the model...")
