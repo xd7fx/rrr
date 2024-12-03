@@ -1,19 +1,21 @@
+import subprocess
 import torch
+from pathlib import Path
 from facenet_pytorch import MTCNN
 import torchvision.transforms.v2 as VT
+from PIL import Image
+from src.helpers import load_audio
 from typing import Dict, Literal, Union
-from pathlib import Path
-import cv2
 
 
 class AuViLSTMModel(torch.nn.Module):
     def __init__(
         self,
-        num_classes: int = 8,
+        num_classes: int = 5,
         mode: Literal["audio", "visual", "both"] = "visual",
         hidden_sizes: Dict = {"audio": 384, "visual": 384},
         rnn_num_layers: int = 2,
-        backbone_feat_size: int = 768,
+        backbone_feat_size: int = 768
     ):
         super().__init__()
         self.mode = mode
@@ -25,12 +27,12 @@ class AuViLSTMModel(torch.nn.Module):
             self.v_backbone = AutoModelForImageClassification.from_pretrained(
                 "dima806/facial_emotions_image_detection"
             )
-            self.v_backbone.classifier = torch.nn.Identity()  # Remove classifier
+            self.v_backbone.classifier = torch.nn.Identity()
             self.v_rnn = torch.nn.GRU(
                 input_size=backbone_feat_size,
-                hidden_size=hidden_sizes["visual"],
+                hidden_size=hidden_sizes['visual'],
                 num_layers=rnn_num_layers,
-                batch_first=True,
+                batch_first=True
             )
             for param in self.v_backbone.parameters():
                 param.requires_grad = False
@@ -38,7 +40,6 @@ class AuViLSTMModel(torch.nn.Module):
         # Audio components
         if mode in ["audio", "both"]:
             from funasr import AutoModel
-
             audio_model = AutoModel(model="iic/emotion2vec_plus_base")
             self.a_backbone = audio_model.model
             self.a_rnn = torch.load("GRU.pt")
@@ -46,20 +47,17 @@ class AuViLSTMModel(torch.nn.Module):
                 param.requires_grad = False
 
         # Final classifier
-        input_size = (
-            hidden_sizes[mode]
-            if mode != "both"
-            else hidden_sizes["visual"] + hidden_sizes["audio"]
-        )
+        input_size = hidden_sizes[mode] if mode != "both" else hidden_sizes["visual"] + hidden_sizes["audio"]
         self.classifier = torch.nn.Linear(input_size, num_classes)
 
     def forward(self, batch: Dict[str, torch.Tensor]) -> torch.Tensor:
         features = []
 
-        # Visual input
+        # Visual input processing
         if self.mode in ["visual", "both"]:
-            frames = batch["frames"]
-            batch_size, seq_len = frames.shape[:2]
+            frames = batch['frames']
+            batch_size = frames.shape[0]
+            seq_len = frames.shape[1]
             frames = frames.view(-1, *frames.shape[-3:])
             with torch.no_grad():
                 visual_feats = self.v_backbone(frames).logits
@@ -67,11 +65,12 @@ class AuViLSTMModel(torch.nn.Module):
             _, h_n = self.v_rnn(visual_feats)
             features.append(h_n[-1])
 
-        # Audio input
+        # Audio input processing
         if self.mode in ["audio", "both"]:
-            audio = batch["audio"].squeeze(1)
+            audio = batch['audio'].squeeze(1)
             with torch.no_grad():
-                audio_feats = self.a_backbone.extract_features(audio)["x"]
+                audio = torch.nn.functional.layer_norm(audio, [audio.shape[-1]])
+                audio_feats = self.a_backbone.extract_features(audio)['x']
             _, h_n = self.a_rnn(audio_feats)
             features.append(h_n[-1])
 
@@ -79,54 +78,69 @@ class AuViLSTMModel(torch.nn.Module):
         return self.classifier(combined_features)
 
 
-class EmotionRecognizerScriptable:
-    def __init__(self, model_path: str, device="cuda" if torch.cuda.is_available() else "cpu"):
-        self.model = torch.load(model_path, map_location=device)
+class EmotionRecognizer:
+    def __init__(self, model_path: Union[str, Path], device='cuda' if torch.cuda.is_available() else 'cpu'):
         self.device = device
+        self.model = torch.load(model_path, map_location=device)
         self.model.eval()
-
+        self.temp_dir = "/temp_frames"
         self.image_transforms = VT.Compose([
+            VT.ToPILImage(),
+            VT.ToImage(),
             VT.Resize((224, 224)),
             VT.Grayscale(num_output_channels=3),
-            VT.ToTensor(),
-            VT.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+            VT.ToDtype(torch.float32, scale=True),
+            VT.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
         ])
         self.mtcnn = MTCNN(
             image_size=224,
             margin=32,
-            device=self.device,
+            device=device,
             select_largest=True,
             post_process=False,
-            keep_all=False,
+            keep_all=False
         )
-        self.emotion_labels = ["angry", "calm", "disgust", "fearful", "happy", "neutral", "sad", "surprised"]
+        self.emotion_labels = ['angry', 'calm', 'disgust', 'fearful', 'happy', 'neutral', 'sad', 'surprised']
 
-    def preprocess_video(self, video_path: Union[str, Path], fps: int = 5) -> torch.Tensor:
-        cap = cv2.VideoCapture(str(video_path))
+    def extract_frames(self, video_path: str, fps: int = 5):
+        output_dir = Path(self.temp_dir)
+        output_dir.mkdir(exist_ok=True)
+        subprocess.call(
+            ["ffmpeg", "-i", str(video_path), "-vf", f"fps={fps},scale=256:256", f"{output_dir}/%03d.png"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.STDOUT
+        )
+        return sorted(output_dir.glob("*.png"))
+
+    def preprocess_video(self, video_path: Union[str, Path]) -> torch.Tensor:
+        frame_paths = self.extract_frames(video_path)
         frames = []
-        frame_rate = int(cap.get(cv2.CAP_PROP_FPS) // fps)
-        frame_count = 0
-
-        while cap.isOpened():
-            ret, frame = cap.read()
-            if not ret:
-                break
-            if frame_count % frame_rate == 0:
-                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                frame_tensor = self.mtcnn(frame)
-                if frame_tensor is not None:
-                    frames.append(self.image_transforms(frame_tensor))
-            frame_count += 1
-
-        cap.release()
+        for frame_path in frame_paths:
+            try:
+                img = Image.open(frame_path)
+                face_img = self.mtcnn(img)
+                if face_img is not None:
+                    if isinstance(face_img, torch.Tensor):
+                        face_img = self.image_transforms(face_img.to(torch.uint8))
+                    frames.append(face_img)
+            except Exception as e:
+                print(f"Error processing frame {frame_path}: {e}")
         if not frames:
-            raise ValueError("No faces detected in video.")
+            raise ValueError("No faces detected in the video.")
         return torch.stack(frames).unsqueeze(0)
 
-    def predict(self, video_path: Union[str, Path]) -> Dict[str, float]:
+    def predict_emotion(self, video_path: Union[str, Path]) -> Dict:
         video_frames = self.preprocess_video(video_path)
-        input_dict = {"frames": video_frames.to(self.device)}
+        audio = torch.from_numpy(load_audio(video_path)[None, :])
+        input_dict = {'frames': video_frames.to(self.device), 'audio': audio.to(self.device)}
         with torch.no_grad():
             logits = self.model(input_dict)
-            probabilities = torch.nn.functional.softmax(logits, dim=-1)
-        return {label: prob.item() for label, prob in zip(self.emotion_labels, probabilities[0])}
+            probabilities = torch.softmax(logits, dim=-1)
+            top_k = torch.topk(probabilities, k=3)
+        return {
+            'top_emotion': self.emotion_labels[top_k.indices[0][0].item()],
+            'probabilities': {
+                self.emotion_labels[idx]: prob.item()
+                for idx, prob in zip(top_k.indices[0], top_k.values[0])
+            }
+        }
