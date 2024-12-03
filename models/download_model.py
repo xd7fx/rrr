@@ -2,10 +2,10 @@ import gdown
 from pathlib import Path
 
 def download_model():
-    # رابط التحميل المباشر
-    url = "https://drive.google.com/file/d/1p4_iU9UF61Jtb0xnAn-alsTyLrQvAMSB/view?usp=sharing"
+    # رابط التحميل المباشر للنموذج
+    url = "https://drive.google.com/uc?id=YOUR_MODEL_FILE_ID"
     output = Path("models/auvi_lstm_model.pkl")
-    
+
     if not output.exists():
         print("Downloading the model...")
         gdown.download(url, str(output), quiet=False)
