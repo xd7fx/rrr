@@ -1,8 +1,7 @@
 torch
 torchvision
-opencv-python-headless
-facenet-pytorch
-numpy
 streamlit
+facenet-pytorch
 gdown
-transformers
+numpy
+Pillow
