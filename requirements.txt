@@ -1,8 +1,9 @@
 torch
 torchvision
-facenet-pytorch
 transformers
 funasr
-gdown
 streamlit
+gdown
 Pillow
+facenet-pytorch
+PyYAML
