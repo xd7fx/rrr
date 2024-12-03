@@ -1,26 +1,20 @@
-import subprocess
-import gradio as gr
 import torch
-from pathlib import Path
-from typing import Union, Dict
 from facenet_pytorch import MTCNN
 import torchvision.transforms.v2 as VT
-from PIL import Image
-from typing import Dict, Literal
+from typing import Dict, Literal, Union
+from pathlib import Path
+import cv2
 
 
 class AuViLSTMModel(torch.nn.Module):
     def __init__(
         self,
-        num_classes: int = 5,
+        num_classes: int = 8,
         mode: Literal["audio", "visual", "both"] = "visual",
         hidden_sizes: Dict = {"audio": 384, "visual": 384},
         rnn_num_layers: int = 2,
         backbone_feat_size: int = 768,
     ):
-        """
-        Simplified AuViLSTMModel for emotion recognition.
-        """
         super().__init__()
         self.mode = mode
 
@@ -38,8 +32,6 @@ class AuViLSTMModel(torch.nn.Module):
                 num_layers=rnn_num_layers,
                 batch_first=True,
             )
-
-            # Freeze backbone
             for param in self.v_backbone.parameters():
                 param.requires_grad = False
 
@@ -50,19 +42,21 @@ class AuViLSTMModel(torch.nn.Module):
             audio_model = AutoModel(model="iic/emotion2vec_plus_base")
             self.a_backbone = audio_model.model
             self.a_rnn = torch.load("GRU.pt")
-
-            # Freeze backbone
             for param in self.a_backbone.parameters():
                 param.requires_grad = False
 
         # Final classifier
-        input_size = hidden_sizes[mode] if mode != "both" else hidden_sizes["visual"] + hidden_sizes["audio"]
+        input_size = (
+            hidden_sizes[mode]
+            if mode != "both"
+            else hidden_sizes["visual"] + hidden_sizes["audio"]
+        )
         self.classifier = torch.nn.Linear(input_size, num_classes)
 
     def forward(self, batch: Dict[str, torch.Tensor]) -> torch.Tensor:
         features = []
 
-        # Process visual input
+        # Visual input
         if self.mode in ["visual", "both"]:
             frames = batch["frames"]
             batch_size, seq_len = frames.shape[:2]
@@ -73,7 +67,7 @@ class AuViLSTMModel(torch.nn.Module):
             _, h_n = self.v_rnn(visual_feats)
             features.append(h_n[-1])
 
-        # Process audio input
+        # Audio input
         if self.mode in ["audio", "both"]:
             audio = batch["audio"].squeeze(1)
             with torch.no_grad():
@@ -85,11 +79,10 @@ class AuViLSTMModel(torch.nn.Module):
         return self.classifier(combined_features)
 
 
-class EmotionRecognizerGradio:
-    def __init__(self, model_path: Union[str, Path], device="cuda" if torch.cuda.is_available() else "cpu"):
+class EmotionRecognizerScriptable:
+    def __init__(self, model_path: str, device="cuda" if torch.cuda.is_available() else "cpu"):
         self.model = torch.load(model_path, map_location=device)
         self.device = device
-        self.model.to(self.device)
         self.model.eval()
 
         self.image_transforms = VT.Compose([
@@ -98,7 +91,6 @@ class EmotionRecognizerGradio:
             VT.ToTensor(),
             VT.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
         ])
-
         self.mtcnn = MTCNN(
             image_size=224,
             margin=32,
@@ -107,7 +99,6 @@ class EmotionRecognizerGradio:
             post_process=False,
             keep_all=False,
         )
-
         self.emotion_labels = ["angry", "calm", "disgust", "fearful", "happy", "neutral", "sad", "surprised"]
 
     def preprocess_video(self, video_path: Union[str, Path], fps: int = 5) -> torch.Tensor:
@@ -138,25 +129,4 @@ class EmotionRecognizerGradio:
         with torch.no_grad():
             logits = self.model(input_dict)
             probabilities = torch.nn.functional.softmax(logits, dim=-1)
-
-        return {
-            "emotions": probabilities.cpu().numpy().tolist()
-        }
-
-
-# Gradio App
-def gradio_predict(video_file):
-    recognizer = EmotionRecognizerGradio("path_to_your_model.pth")
-    result = recognizer.predict(video_file)
-    return result
-
-
-iface = gr.Interface(
-    fn=gradio_predict,
-    inputs=gr.Video(),
-    outputs="json",
-    title="Emotion Recognition",
-    description="Upload a video to predict emotions."
-)
-
-iface.launch()
+        return {label: prob.item() for label, prob in zip(self.emotion_labels, probabilities[0])}
